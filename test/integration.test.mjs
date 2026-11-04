@@ -142,9 +142,22 @@ test("setInputsActive rejects non-input ids and unknown contexts", mockOnly, asy
 
 test("setPowerState sends PowerOff / PowerOn", mockOnly, async () => {
   assert.equal((await result("setPowerState", ["current"], { state: "STANDBY" })).current, "STANDBY");
-  assert.equal(mock.state.powerMode, "DisplayOff");
+  assert.equal(mock.state.powerMode, "Ready");
   assert.equal((await result("setPowerState", ["current"], { state: "ON" })).current, "ON");
   assert.equal(mock.state.powerMode, "PowerOn");
+});
+
+test("setPowerState re-sends PowerOn the TV ignored while shutting down", mockOnly, async () => {
+  mock.state.shutdownMs = 3000; // real TV: PowerOn ~3s after PowerOff was ignored
+  try {
+    await result("setPowerState", ["current"], { state: "STANDBY" });
+    const sent = mock.state.requests.length;
+    assert.equal((await result("setPowerState", ["current"], { state: "ON" })).current, "ON");
+    const presses = mock.state.requests.slice(sent).filter((q) => q === "POST /keypress/PowerOn").length;
+    assert.ok(presses >= 2, `expected a re-sent PowerOn, saw ${presses}`);
+  } finally {
+    mock.state.shutdownMs = 0;
+  }
 });
 
 test("limited mode: auth turns invalid and blocked calls explain why", mockOnly, async () => {

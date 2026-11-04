@@ -150,11 +150,13 @@ async function activeContext(): Promise<ActiveContext> {
   return ctx;
 }
 
+const sleep = (ms: number) => new Promise<void>((r) => setTimeout(() => r(), ms));
+
 // After a launch/keypress the TV takes a moment to switch; poll until it reports the target.
 async function settle(isDone: (ctx: ActiveContext) => boolean): Promise<ActiveContext> {
   let ctx = await activeContext();
   for (let i = 0; i < 10 && !isDone(ctx); i++) {
-    await new Promise<void>((r) => setTimeout(() => r(), 300));
+    await sleep(300);
     ctx = await activeContext();
   }
   return ctx;
@@ -300,10 +302,27 @@ const getPower: methodGetPower = async () => {
   };
 };
 
+// A TCL Roku TV accepts PowerOn (HTTP 200) but ignores it for several seconds after turning off,
+// while reporting power-mode "Ready" the whole time. So: re-send until the TV confirms, and
+// report the state it actually reached, never the one requested.
+const POWER_TIMEOUT_MS = 10_000;
+const POWER_RESEND_MS = 2_500;
+
 const setPowerState: methodSetPowerState = async ({ args }) => {
-  await keypress(args.state === "ON" ? "PowerOn" : "PowerOff");
-  // ponytail: report the requested state; the TV's power-mode lags the keypress by a few seconds.
-  const current = args.state === "ON" ? "ON" : "STANDBY";
+  const want = args.state === "ON" ? "ON" : "STANDBY";
+  const key = want === "ON" ? "PowerOn" : "PowerOff";
+  const start = Date.now();
+  let lastSent = 0;
+  let current: "ON" | "STANDBY" | "UNKNOWN" = "UNKNOWN";
+  while (Date.now() - start < POWER_TIMEOUT_MS) {
+    if (Date.now() - lastSent >= POWER_RESEND_MS) {
+      await keypress(key);
+      lastSent = Date.now();
+    }
+    await sleep(500);
+    current = toPowerState(tag(await ecp("/query/device-info"), "power-mode"));
+    if (current === want) break;
+  }
   return powerState(current);
 };
 

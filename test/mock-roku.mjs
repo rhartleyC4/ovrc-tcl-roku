@@ -12,7 +12,15 @@ const HOME = { id: "562859", type: "home", name: "Roku Dynamic Menu" };
 const LIMITED_ALLOWED = new Set(["/", "/query/device-info", "/query/active-app"]);
 
 export function startMockRoku({ port = 8060 } = {}) {
-  const state = { mode: "enabled", powerMode: "PowerOn", active: HOME, down: false, requests: [] };
+  const state = {
+    mode: "enabled",
+    powerMode: "PowerOn",
+    active: HOME,
+    down: false,
+    shutdownMs: 0,
+    ignorePowerOnUntil: 0,
+    requests: [],
+  };
 
   const apps = [...APPS.matchAll(/<app id="([^"]+)" type="([^"]+)"[^>]*>([^<]*)<\/app>/g)].map(
     ([, id, type, name]) => ({ id, type, name }),
@@ -55,8 +63,11 @@ export function startMockRoku({ port = 8060 } = {}) {
     if (req.method === "POST" && path.startsWith("/keypress/")) {
       const key = path.slice("/keypress/".length);
       if (key === "Home") state.active = HOME;
-      else if (key === "PowerOff") state.powerMode = "DisplayOff";
-      else if (key === "PowerOn") state.powerMode = "PowerOn";
+      else if (key === "PowerOff") {
+        state.powerMode = "Ready";
+        // Like the real TV: PowerOn is accepted but ignored while it is still shutting down.
+        state.ignorePowerOnUntil = Date.now() + state.shutdownMs;
+      } else if (key === "PowerOn" && Date.now() >= state.ignorePowerOnUntil) state.powerMode = "PowerOn";
       return send(200, "");
     }
     send(404, "");
