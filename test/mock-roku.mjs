@@ -35,6 +35,8 @@ export function startMockRoku({ port = 8060 } = {}) {
       res.end(body);
     };
 
+    // Real TV with network control Disabled: only the UPnP description at / answers; everything else is 401.
+    if (state.mode === "disabled" && path !== "/") return send(401, "", "text/plain");
     if (state.mode === "limited" && !LIMITED_ALLOWED.has(path)) {
       return send(403, "ECP command not allowed in Limited mode.", "text/plain");
     }

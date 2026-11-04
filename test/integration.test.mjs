@@ -169,7 +169,7 @@ test("limited mode: auth turns invalid and blocked calls explain why", mockOnly,
 
     const blocked = await rpc("getInputs", ["available"]);
     assert.equal(blocked.error.code, -32001);
-    assert.match(blocked.error.message, /Control by mobile apps/);
+    assert.match(blocked.error.message, /Control by mobile apps" is limited/);
 
     // device-info and active-app still work in limited mode
     assert.equal((await result("getSystem", ["brand"])).brand, "TCL");
@@ -185,6 +185,19 @@ test("limited mode: auth turns invalid and blocked calls explain why", mockOnly,
     assert.equal(redacted.source, null);
     assert.equal(redacted.canReportSource, false);
     assert.equal(redacted.canReportInput, false);
+  } finally {
+    mock.state.mode = "enabled";
+  }
+});
+
+test("disabled mode: auth turns invalid instead of erroring", mockOnly, async () => {
+  mock.state.mode = "disabled";
+  try {
+    const { methods } = await result("getAuthentication", ["methods"]);
+    assert.equal(methods[0].valid, false);
+    const blocked = await rpc("getSystem", ["brand"]);
+    assert.equal(blocked.error.code, -32001);
+    assert.match(blocked.error.message, /is disabled/);
   } finally {
     mock.state.mode = "enabled";
   }

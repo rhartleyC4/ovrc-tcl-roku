@@ -54,11 +54,10 @@ async function ecp(path: string, method: "GET" | "POST" = "GET"): Promise<string
     );
   }
   const body = await res.text();
-  if (res.status === 403) {
-    throw new RpcError(
-      `The TV blocked ${path}: "Control by mobile apps" is limited or disabled. See ${SETUP_URL}`,
-      ERR_CONTROL_DISABLED,
-    );
+  // "Control by mobile apps": Limited answers 403 for most calls, Disabled answers 401 for all of them.
+  if (res.status === 401 || res.status === 403) {
+    const setting = res.status === 401 ? "disabled" : "limited";
+    throw new RpcError(`The TV blocked ${path}: "Control by mobile apps" is ${setting}. See ${SETUP_URL}`, ERR_CONTROL_DISABLED);
   }
   if (!res.ok) throw new RpcError(`Roku ECP ${method} ${path} returned HTTP ${res.status}`, ERR_DEVICE);
   return body;
