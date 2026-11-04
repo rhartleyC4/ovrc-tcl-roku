@@ -52,6 +52,10 @@ export function startMockRoku({ port = 8060 } = {}) {
     if (req.method === "GET" && path === "/query/audio-device") return send(200, AUDIO_DEVICE);
     if (req.method === "GET" && path === "/query/active-app") {
       const a = state.active;
+      // Real TV in Limited mode: the home screen is reported in full, anything else is redacted.
+      if (state.mode === "limited" && a !== HOME) {
+        return send(200, `<?xml version="1.0" encoding="UTF-8" ?>\n<active-app>\n\t<app>Roku</app>\n</active-app>\n`);
+      }
       return send(200, `<?xml version="1.0" encoding="UTF-8" ?>\n<active-app>\n\t<app id="${a.id}" type="${a.type}" version="1.0.0">${a.name}</app>\n</active-app>\n`);
     }
     if (req.method === "POST" && path.startsWith("/launch/")) {

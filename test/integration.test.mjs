@@ -175,6 +175,16 @@ test("limited mode: auth turns invalid and blocked calls explain why", mockOnly,
     assert.equal((await result("getSystem", ["brand"])).brand, "TCL");
     const { contexts } = await result("getActiveContexts", ["contexts"]);
     assert.equal(contexts[0].outputs, null);
+    assert.equal(contexts[0].source.id, "home"); // the home screen is still reported
+
+    // ...but any other app is redacted, so the integration must not claim it can report it
+    mock.state.mode = "enabled";
+    await result("setAppSourcesActive", ["source"], { contextId: "main", sourceId: "12" });
+    mock.state.mode = "limited";
+    const [redacted] = (await result("getActiveContexts", ["contexts"])).contexts;
+    assert.equal(redacted.source, null);
+    assert.equal(redacted.canReportSource, false);
+    assert.equal(redacted.canReportInput, false);
   } finally {
     mock.state.mode = "enabled";
   }

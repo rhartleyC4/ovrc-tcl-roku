@@ -144,7 +144,8 @@ const CONTEXT_ID = "main"; // Roku TVs have no picture-in-picture: one context
 async function activeContext(): Promise<ActiveContext> {
   const [app] = parseApps(await ecp("/query/active-app"));
   const ctx: ActiveContext = { id: CONTEXT_ID, canReportInput: true, canReportSource: true, input: null, source: null, outputs: null };
-  if (!app) return ctx;
+  // In Limited mode the TV redacts anything but the home screen to a bare <app>Roku</app> (no id/type).
+  if (!app) return { ...ctx, canReportInput: false, canReportSource: false };
   if (app.type === "tvin") ctx.input = toInput(app);
   else ctx.source = toAppSource(app.type === "home" ? { ...app, id: "home", name: "Home" } : app);
   return ctx;
