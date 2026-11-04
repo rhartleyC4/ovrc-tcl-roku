@@ -17,11 +17,14 @@ It is not an official Snap One, Roku, or TCL product.
 | `getInputs` / `setInputsActive` | Yes | HDMI, AV and tuner inputs (with the labels you set on the TV); `POST /launch/tvinput.*` |
 | `getAppSources` / `setAppSourcesActive` | Yes | Installed apps; `POST /launch/{appId}` |
 | `dispatchAppSourcesTerminate` | Yes | Returns to Home (Roku has no "close app" command) |
-| `getActiveContexts` | Yes | `GET /query/active-app` |
+| `getActiveContexts` | Yes | `GET /query/active-app`, plus the active audio output |
+| `getOutputs` | Read only | Undocumented `GET /query/audio-device`: volume, mute, active destination (TV speakers, optical, ARC, headphones, ...) |
+| `getVideo` | Not reported | ECP exposes no picture settings; answers all-`null` so OvrC doesn't flag an error |
 | `getAuthentication` / `setAuthentication` | Yes | Reports whether the TV allows network control (see below) |
 | `getMetadata` | Partial | Links to the TV maker's support site |
 
-Not possible over ECP: reboot, firmware updates, picture/video settings, CEC/ARC, renaming inputs, network configuration.
+Not possible over ECP: reboot, firmware updates, picture/video settings, changing the audio destination, audio format, CEC/ARC, renaming inputs, network configuration.
+The Display spec has no volume or mute setters, so volume is read-only even though the TV accepts `VolumeUp`/`VolumeDown`/`VolumeMute` keypresses.
 Those methods return JSON-RPC `-32601` (method not found).
 
 ## Enable network control

@@ -5,6 +5,7 @@ import { readFileSync } from "node:fs";
 const fixture = (name) => readFileSync(new URL(`fixtures/${name}`, import.meta.url), "utf8");
 const DEVICE_INFO = fixture("device-info.xml");
 const APPS = fixture("apps.xml");
+const AUDIO_DEVICE = fixture("audio-device.xml");
 const HOME = { id: "562859", type: "home", name: "Roku Dynamic Menu" };
 
 // Endpoints a real TV still answers in "limited" mode (verified against a TCL 32S301, Roku OS 15.3.4).
@@ -40,6 +41,7 @@ export function startMockRoku({ port = 8060 } = {}) {
       );
     }
     if (req.method === "GET" && path === "/query/apps") return send(200, APPS);
+    if (req.method === "GET" && path === "/query/audio-device") return send(200, AUDIO_DEVICE);
     if (req.method === "GET" && path === "/query/active-app") {
       const a = state.active;
       return send(200, `<?xml version="1.0" encoding="UTF-8" ?>\n<active-app>\n\t<app id="${a.id}" type="${a.type}" version="1.0.0">${a.name}</app>\n</active-app>\n`);

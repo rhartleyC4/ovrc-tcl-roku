@@ -112,6 +112,8 @@ test("getActiveContexts reports one context", async () => {
   const { contexts } = await result("getActiveContexts", ["contexts"]);
   assert.equal(contexts.length, 1);
   assert.equal(contexts[0].id, "main");
+  assert.equal(contexts[0].outputs[0].id, "main"); // feeds OvrC's "Audio Output" field
+  assert.match(contexts[0].outputs[0].destination.active.friendlyName, /\S/);
 });
 
 test("getAuthentication is valid when network control is enabled", async () => {
@@ -156,16 +158,33 @@ test("limited mode: auth turns invalid and blocked calls explain why", mockOnly,
     assert.equal(blocked.error.code, -32001);
     assert.match(blocked.error.message, /Control by mobile apps/);
 
-    // device-info still works in limited mode
+    // device-info and active-app still work in limited mode
     assert.equal((await result("getSystem", ["brand"])).brand, "TCL");
+    const { contexts } = await result("getActiveContexts", ["contexts"]);
+    assert.equal(contexts[0].outputs, null);
   } finally {
     mock.state.mode = "enabled";
   }
 });
 
-test("getOutputs and getVideo answer 'not reported' instead of erroring", async () => {
-  // OvrC calls both on every device page load and marks the device Critical on errors.
-  assert.deepEqual(await result("getOutputs", ["available", "allAudio"]), { available: null, allAudio: null });
+test("getOutputs reports volume, mute and the active audio destination", async () => {
+  const { allAudio, available } = await result("getOutputs", ["available", "allAudio"]);
+  assert.ok(Number.isInteger(allAudio.volume.level));
+  assert.equal(allAudio.volume.max, 100);
+  assert.equal(typeof allAudio.muted, "boolean");
+  const [main] = available;
+  assert.equal(main.id, "main");
+  assert.match(main.destination.active.friendlyName, /\S/);
+  assert.ok(main.destination.available.some((d) => d.canonicalId === "CONN:OPTICAL"));
+  assert.equal(main.destination.canSelectActive, null);
+  if (!REAL_IP) {
+    assert.equal(allAudio.volume.level, 18);
+    assert.deepEqual(main.destination.active, { key: "speakers", friendlyName: "TV Speakers", canonicalId: "CONN:INTERNAL" });
+  }
+});
+
+test("getVideo answers 'not reported' instead of erroring", async () => {
+  // OvrC calls it on every device page load and treats errors as device problems.
   const video = await result("getVideo", ["pictureMode", "aspectRatio"]);
   assert.equal(video.pictureMode, null);
   assert.equal(video.aspectRatio, null);

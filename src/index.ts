@@ -4,7 +4,10 @@ import {
   type AppSource,
   type Authentication,
   type Input,
+  type KeyValuePair,
   type NetworkInterface,
+  type Output,
+  type OutputAudio,
   type PowerPowerState,
   type methodDispatchAppSourcesTerminate,
   type methodGetActiveContexts,
@@ -337,13 +340,81 @@ const dispatchAppSourcesTerminate: methodDispatchAppSourcesTerminate = async ({ 
 };
 
 const getActiveContexts: methodGetActiveContexts = async () => ({
-  contexts: async () => [await activeContext()],
+  contexts: async () => {
+    // audio-device is blocked in Limited mode; still report the active app/input.
+    const [ctx, audio] = await Promise.all([activeContext(), audioDevice()().catch(() => null)]);
+    return [{ ...ctx, outputs: audio ? mainOutputs(audio) : null }];
+  },
 });
 
-// OvrC calls these on every page load and treats "method not found" as a device error.
-// ECP reports neither audio outputs nor picture settings, so answer "not reported".
-const getOutputs: methodGetOutputs = async () => ({ available: null, allAudio: null });
+// --- Audio: undocumented ECP /query/audio-device (Roku TVs, verified on Roku OS 15.3) ---
 
+// Roku destination names -> OvrC KeyValuePairs. canonicalIds follow the spec's examples.
+const DESTINATIONS: Record<string, { friendlyName: string; canonicalId: string | null }> = {
+  speakers: { friendlyName: "TV Speakers", canonicalId: "CONN:INTERNAL" },
+  spdif: { friendlyName: "Digital Optical", canonicalId: "CONN:OPTICAL" },
+  arc: { friendlyName: "HDMI ARC", canonicalId: null },
+  lineout: { friendlyName: "Line Out", canonicalId: null },
+  headphones: { friendlyName: "Headphones", canonicalId: null },
+  "peripheral-speakers": { friendlyName: "Roku Wireless Speakers", canonicalId: null },
+  "mobile-sas": { friendlyName: "Private Listening (mobile app)", canonicalId: null },
+  "wifi-remote-sas": { friendlyName: "Private Listening (remote)", canonicalId: null },
+};
+
+// Where the sound is primarily heard when several destinations are active at once
+// (optical and line out are always "on" alongside the speakers).
+const PRIMARY_ORDER = ["headphones", "mobile-sas", "wifi-remote-sas", "arc", "peripheral-speakers", "speakers"];
+
+const toDestination = (name: string): KeyValuePair => ({ key: name, ...(DESTINATIONS[name] ?? { friendlyName: name, canonicalId: null }) });
+const toAudio = (xml: string): OutputAudio => {
+  const level = Number(tag(xml, "volume"));
+  return {
+    volume: Number.isFinite(level) ? { level, min: 0, max: 100, step: 1 } : null,
+    muted: tag(xml, "muted") === null ? null : tag(xml, "muted") === "true",
+    format: null, // not reported by the TV
+  };
+};
+
+function audioDevice() {
+  let cached: Promise<string> | undefined;
+  return () => (cached ??= ecp("/query/audio-device"));
+}
+
+// The TV has a single audio output channel; its destination is where sound is heard.
+function mainOutputs(xml: string): Output[] | null {
+  const active = (tag(xml, "destination-list") ?? "").split(",").filter(Boolean);
+  const all = (tag(xml, "all-destinations") ?? "").split(",").filter((d) => d in DESTINATIONS);
+  const primary = PRIMARY_ORDER.find((d) => active.includes(d)) ?? active[0];
+  if (!primary) return null;
+  const perDestination = xml.match(new RegExp(`<destination name="${primary}">([\\s\\S]*?)</destination>`))?.[1];
+  return [
+    {
+      id: "main",
+      friendlyName: "TV Audio",
+      destination: {
+        active: toDestination(primary),
+        available: all.map(toDestination),
+        availableSource: "API",
+        canSelectActive: null, // ECP cannot change the audio destination
+        audio: perDestination ? toAudio(perDestination) : null,
+      },
+    },
+  ];
+}
+
+const getOutputs: methodGetOutputs = async () => {
+  const audio = audioDevice();
+  return {
+    allAudio: async () => {
+      const global = (await audio()).match(/<global>([\s\S]*?)<\/global>/)?.[1];
+      return global ? toAudio(global) : null;
+    },
+    available: async () => mainOutputs(await audio()),
+  };
+};
+
+// ECP exposes no picture settings, so every field is "not reported".
+// OvrC calls this on every page load and treats "method not found" as a device error.
 const getVideo: methodGetVideo = async () => ({
   screenMute: null,
   aspectRatio: null,
