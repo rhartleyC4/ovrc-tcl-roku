@@ -11,13 +11,14 @@ const HOME = { id: "562859", type: "home", name: "Roku Dynamic Menu" };
 const LIMITED_ALLOWED = new Set(["/", "/query/device-info", "/query/active-app"]);
 
 export function startMockRoku({ port = 8060 } = {}) {
-  const state = { mode: "enabled", powerMode: "PowerOn", active: HOME, requests: [] };
+  const state = { mode: "enabled", powerMode: "PowerOn", active: HOME, down: false, requests: [] };
 
   const apps = [...APPS.matchAll(/<app id="([^"]+)" type="([^"]+)"[^>]*>([^<]*)<\/app>/g)].map(
     ([, id, type, name]) => ({ id, type, name }),
   );
 
   const server = http.createServer((req, res) => {
+    if (state.down) return req.socket.destroy(); // simulates a TV that dropped off the network
     const path = decodeURIComponent(new URL(req.url, "http://x").pathname);
     state.requests.push(`${req.method} ${path}`);
     const send = (status, body, type = "text/xml") => {

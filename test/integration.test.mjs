@@ -65,6 +65,7 @@ test("getSystem reports brand, model and serial", async () => {
   assert.match(r.serialNumber, /^[A-Z0-9]{12}$/);
   assert.equal(r.label.canSet, false);
   assert.equal(r.language.active.key, "en");
+  assert.equal(r.language.active.friendlyName, "English");
 });
 
 test("unrequested lazy fields are not computed", async () => {
@@ -84,7 +85,7 @@ test("getNetwork reports the Wi-Fi interface", async () => {
   const { interfaces } = await result("getNetwork", ["interfaces"]);
   const wifi = interfaces.find((i) => i.id === "wifi");
   assert.equal(wifi.adapterType, "WIRELESS");
-  assert.match(wifi.macAddress, /^([0-9a-f]{2}:){5}[0-9a-f]{2}$/);
+  assert.match(wifi.macAddress, /^([0-9A-F]{2}:){5}[0-9A-F]{2}$/); // upper case, like the rest of OvrC
 });
 
 test("getPower maps power-mode", async () => {
@@ -159,6 +160,25 @@ test("limited mode: auth turns invalid and blocked calls explain why", mockOnly,
     assert.equal((await result("getSystem", ["brand"])).brand, "TCL");
   } finally {
     mock.state.mode = "enabled";
+  }
+});
+
+test("getOutputs and getVideo answer 'not reported' instead of erroring", async () => {
+  // OvrC calls both on every device page load and marks the device Critical on errors.
+  assert.deepEqual(await result("getOutputs", ["available", "allAudio"]), { available: null, allAudio: null });
+  const video = await result("getVideo", ["pictureMode", "aspectRatio"]);
+  assert.equal(video.pictureMode, null);
+  assert.equal(video.aspectRatio, null);
+});
+
+test("an unreachable TV yields a clear error, not an uncaught TypeError", mockOnly, async () => {
+  mock.state.down = true;
+  try {
+    const { error } = await rpc("getSystem", ["brand"]);
+    assert.equal(error.code, -32003);
+    assert.match(error.message, /Could not reach the TV at 127\.0\.0\.1:8060/);
+  } finally {
+    mock.state.down = false;
   }
 });
 

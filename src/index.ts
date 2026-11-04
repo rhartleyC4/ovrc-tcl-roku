@@ -14,6 +14,8 @@ import {
   type methodGetInputs,
   type methodGetMetadata,
   type methodGetNetwork,
+  type methodGetOutputs,
+  type methodGetVideo,
   type methodGetPower,
   type methodGetSystem,
   type methodSetAppSourcesActive,
@@ -33,10 +35,21 @@ const SETUP_URL = "https://github.com/rhartleyC4/ovrc-tcl-roku#enable-network-co
 // JSON-RPC server-defined error range (-32000..-32099).
 const ERR_CONTROL_DISABLED = -32001;
 const ERR_DEVICE = -32002;
+const ERR_UNREACHABLE = -32003;
 const ERR_BAD_ARGS = -32602;
 
 async function ecp(path: string, method: "GET" | "POST" = "GET"): Promise<string> {
-  const res = await deviceFetch(`http://${getDevice().ipv4}:${ECP_PORT}${path}`, { method });
+  const ip = getDevice().ipv4;
+  let res: Response;
+  try {
+    res = await deviceFetch(`http://${ip}:${ECP_PORT}${path}`, { method });
+  } catch (e) {
+    throw new RpcError(
+      `Could not reach the TV at ${ip}:${ECP_PORT} (${e instanceof Error ? e.message : e}). ` +
+        `Check it is powered and that Settings > System > Power > Fast TV Start is on.`,
+      ERR_UNREACHABLE,
+    );
+  }
   const body = await res.text();
   if (res.status === 403) {
     throw new RpcError(
@@ -84,6 +97,9 @@ function powerState(current: "ON" | "STANDBY" | "UNKNOWN"): PowerPowerState {
   // ponytail: spec is ambiguous; "allowed" = the state you can switch to from here.
   return { current, allowedPowerState: current === "ON" ? "STANDBY" : "ON" };
 }
+
+// ponytail: Roku OS UI languages; unknown codes fall back to the raw code.
+const LANGUAGES: Record<string, string> = { en: "English", es: "Spanish", fr: "French", de: "German", pt: "Portuguese", it: "Italian" };
 
 const INPUT_NAMES: Record<string, string> = { cvbs: "AV", dtv: "Live TV", tuner: "Live TV" };
 
@@ -186,7 +202,9 @@ const getSystem: methodGetSystem = async () => {
     label: async () => ({ canSet: false, label: (await info("user-device-name")) ?? "" }),
     language: async () => {
       const lang = await info("language");
-      return lang ? { active: { key: lang, friendlyName: lang, canonicalId: null }, available: null, availableSource: null } : null;
+      return lang
+        ? { active: { key: lang, friendlyName: LANGUAGES[lang] ?? lang, canonicalId: null }, available: null, availableSource: null }
+        : null;
     },
     country: async () => {
       const country = await info("country");
@@ -239,6 +257,7 @@ const getNetwork: methodGetNetwork = async () => {
         info("supports-ethernet"),
       ]);
       const ipv4 = { canSet: false, addressType: null, effective: { address: getDevice().ipv4 } };
+      const mac = (m: string | null) => m?.toUpperCase() ?? null; // OvrC shows MACs in upper case
       const ifaces: NetworkInterface[] = [
         {
           id: "wifi",
@@ -246,7 +265,7 @@ const getNetwork: methodGetNetwork = async () => {
           adapterType: "WIRELESS",
           enabled: type === "wifi",
           canEnable: false,
-          macAddress: wifiMac,
+          macAddress: mac(wifiMac),
           wifi: { ssid: type === "wifi" ? ssid : null },
           ipv4: type === "wifi" ? ipv4 : null,
         },
@@ -258,7 +277,7 @@ const getNetwork: methodGetNetwork = async () => {
           adapterType: "WIRED",
           enabled: type === "ethernet",
           canEnable: false,
-          macAddress: ethMac,
+          macAddress: mac(ethMac),
           wifi: null,
           ipv4: type === "ethernet" ? ipv4 : null,
         });
@@ -321,6 +340,19 @@ const getActiveContexts: methodGetActiveContexts = async () => ({
   contexts: async () => [await activeContext()],
 });
 
+// OvrC calls these on every page load and treats "method not found" as a device error.
+// ECP reports neither audio outputs nor picture settings, so answer "not reported".
+const getOutputs: methodGetOutputs = async () => ({ available: null, allAudio: null });
+
+const getVideo: methodGetVideo = async () => ({
+  screenMute: null,
+  aspectRatio: null,
+  pictureMode: null,
+  brightness: null,
+  contrast: null,
+  sharpness: null,
+});
+
 await serveRpc({
   getAuthentication,
   setAuthentication,
@@ -336,4 +368,6 @@ await serveRpc({
   setAppSourcesActive,
   dispatchAppSourcesTerminate,
   getActiveContexts,
+  getOutputs,
+  getVideo,
 });
