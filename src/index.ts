@@ -1,0 +1,339 @@
+import {
+  serveRpc,
+  type ActiveContext,
+  type AppSource,
+  type Authentication,
+  type Input,
+  type NetworkInterface,
+  type PowerPowerState,
+  type methodDispatchAppSourcesTerminate,
+  type methodGetActiveContexts,
+  type methodGetAppSources,
+  type methodGetAuthentication,
+  type methodGetFirmware,
+  type methodGetInputs,
+  type methodGetMetadata,
+  type methodGetNetwork,
+  type methodGetPower,
+  type methodGetSystem,
+  type methodSetAppSourcesActive,
+  type methodSetAuthentication,
+  type methodSetInputsActive,
+  type methodSetPowerState,
+} from "@snap-one/ovrc-integration-display";
+import { getDevice } from "ovrc:core";
+import { deviceFetch } from "ovrc:net";
+import { RpcError } from "ovrc:rpc";
+
+// --- Roku External Control Protocol (ECP): plain HTTP on port 8060 -------
+
+const ECP_PORT = 8060;
+const SETUP_URL = "https://github.com/rhartleyC4/ovrc-tcl-roku#enable-network-control";
+
+// JSON-RPC server-defined error range (-32000..-32099).
+const ERR_CONTROL_DISABLED = -32001;
+const ERR_DEVICE = -32002;
+const ERR_BAD_ARGS = -32602;
+
+async function ecp(path: string, method: "GET" | "POST" = "GET"): Promise<string> {
+  const res = await deviceFetch(`http://${getDevice().ipv4}:${ECP_PORT}${path}`, { method });
+  const body = await res.text();
+  if (res.status === 403) {
+    throw new RpcError(
+      `The TV blocked ${path}: "Control by mobile apps" is limited or disabled. See ${SETUP_URL}`,
+      ERR_CONTROL_DISABLED,
+    );
+  }
+  if (!res.ok) throw new RpcError(`Roku ECP ${method} ${path} returned HTTP ${res.status}`, ERR_DEVICE);
+  return body;
+}
+
+const keypress = (key: string) => ecp(`/keypress/${key}`, "POST");
+const launch = (id: string) => ecp(`/launch/${encodeURIComponent(id)}`, "POST");
+
+// ponytail: regex XML parsing. ECP responses are flat and stable; no XML parser exists in the runtime.
+const unescapeXml = (s: string) =>
+  s.replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&apos;/g, "'").replace(/&amp;/g, "&");
+
+function tag(xml: string, name: string): string | null {
+  const m = xml.match(new RegExp(`<${name}>([^<]*)</${name}>`));
+  return m?.[1] ? unescapeXml(m[1].trim()) : null;
+}
+
+type RokuApp = { id: string; type: string; name: string };
+
+function parseApps(xml: string): RokuApp[] {
+  return [...xml.matchAll(/<app\s+id="([^"]+)"\s+type="([^"]+)"[^>]*>([^<]*)<\/app>/g)].map(
+    ([, id, type, name]) => ({ id: id!, type: type!, name: unescapeXml(name!.trim()) }),
+  );
+}
+
+// device-info backs most getters; fetch it at most once per invocation.
+function deviceInfo() {
+  let cached: Promise<string> | undefined;
+  return (field: string) => (cached ??= ecp("/query/device-info")).then((xml) => tag(xml, field));
+}
+
+// --- Mapping helpers --------------------------------------------------------
+
+// Roku power-mode values: PowerOn, DisplayOff, Ready, Headless, Suspend.
+const toPowerState = (mode: string | null): "ON" | "STANDBY" | "UNKNOWN" =>
+  mode === "PowerOn" ? "ON" : mode ? "STANDBY" : "UNKNOWN";
+
+function powerState(current: "ON" | "STANDBY" | "UNKNOWN"): PowerPowerState {
+  // ponytail: spec is ambiguous; "allowed" = the state you can switch to from here.
+  return { current, allowedPowerState: current === "ON" ? "STANDBY" : "ON" };
+}
+
+const INPUT_NAMES: Record<string, string> = { cvbs: "AV", dtv: "Live TV", tuner: "Live TV" };
+
+function inputFriendlyName(id: string): string {
+  const port = id.replace(/^tvinput\./, "");
+  const hdmi = port.match(/^hdmi(\d+)$/);
+  return hdmi ? `HDMI ${hdmi[1]}` : (INPUT_NAMES[port] ?? port.toUpperCase());
+}
+
+function toInput(app: RokuApp): Input {
+  const port = app.id.replace(/^tvinput\./, "");
+  const kind = port.startsWith("hdmi") ? "HDMI" : port === "cvbs" ? "COMPOSITE" : "TUNER";
+  return {
+    id: app.id,
+    friendlyName: inputFriendlyName(app.id),
+    label: { canSet: false, label: app.name },
+    canActivate: true,
+    connectionType: { key: kind, friendlyName: kind === "COMPOSITE" ? "Composite" : kind === "TUNER" ? "Tuner" : "HDMI", canonicalId: null },
+    connectionTypes: null,
+    connectionPresent: "UNKNOWN", // ECP does not report cable or signal presence
+    signalPresent: "UNKNOWN",
+    cecMode: null,
+    cecModes: null,
+    arcMode: null,
+    arcModes: null,
+  };
+}
+
+const toAppSource = (app: RokuApp): AppSource => ({
+  id: app.id,
+  friendlyName: app.name,
+  canActivate: true,
+  canTerminate: true,
+  canonicalId: null,
+});
+
+const CONTEXT_ID = "main"; // Roku TVs have no picture-in-picture: one context
+
+async function activeContext(): Promise<ActiveContext> {
+  const [app] = parseApps(await ecp("/query/active-app"));
+  const ctx: ActiveContext = { id: CONTEXT_ID, canReportInput: true, canReportSource: true, input: null, source: null, outputs: null };
+  if (!app) return ctx;
+  if (app.type === "tvin") ctx.input = toInput(app);
+  else ctx.source = toAppSource(app.type === "home" ? { ...app, id: "home", name: "Home" } : app);
+  return ctx;
+}
+
+// After a launch/keypress the TV takes a moment to switch; poll until it reports the target.
+async function settle(isDone: (ctx: ActiveContext) => boolean): Promise<ActiveContext> {
+  let ctx = await activeContext();
+  for (let i = 0; i < 10 && !isDone(ctx); i++) {
+    await new Promise<void>((r) => setTimeout(() => r(), 300));
+    ctx = await activeContext();
+  }
+  return ctx;
+}
+
+function requireContext(contextId: string) {
+  if (contextId !== CONTEXT_ID) throw new RpcError(`Unknown context "${contextId}"`, ERR_BAD_ARGS);
+}
+
+async function apps(type: "tvin" | "appl"): Promise<RokuApp[]> {
+  return parseApps(await ecp("/query/apps")).filter((a) => a.type === type);
+}
+
+// --- Handlers ----------------------------------------------------------------
+
+async function authentication(): Promise<Authentication> {
+  let mode: string | null;
+  try {
+    mode = await deviceInfo()("ecp-setting-mode");
+  } catch (e) {
+    if (e instanceof RpcError && e.code === ERR_CONTROL_DISABLED) mode = "disabled";
+    else throw e;
+  }
+  return {
+    id: "network-control",
+    label: 'Enable "Control by mobile apps" on the TV',
+    // Older Roku OS builds omit ecp-setting-mode and allow full control.
+    valid: mode !== "limited" && mode !== "disabled",
+    documentationURL: SETUP_URL,
+    fields: [],
+  };
+}
+
+const getAuthentication: methodGetAuthentication = async () => ({
+  methods: async () => [await authentication()],
+});
+
+// Nothing to submit; re-checks the TV setting so "Save" in OvrC refreshes the status.
+const setAuthentication: methodSetAuthentication = async () => authentication();
+
+const getSystem: methodGetSystem = async () => {
+  const info = deviceInfo();
+  return {
+    brand: () => info("vendor-name"),
+    model: () => info("model-name"),
+    serialNumber: () => info("serial-number"),
+    friendlyName: () => info("friendly-device-name"),
+    label: async () => ({ canSet: false, label: (await info("user-device-name")) ?? "" }),
+    language: async () => {
+      const lang = await info("language");
+      return lang ? { active: { key: lang, friendlyName: lang, canonicalId: null }, available: null, availableSource: null } : null;
+    },
+    country: async () => {
+      const country = await info("country");
+      return country ? { active: { key: country, friendlyName: country, canonicalId: null }, available: null, availableSource: null } : null;
+    },
+    contactInformation: null,
+  };
+};
+
+const getFirmware: methodGetFirmware = async () => {
+  const info = deviceInfo();
+  return {
+    version: async () => {
+      const [version, build, buildNumber] = await Promise.all([
+        info("software-version"),
+        info("software-build"),
+        info("build-number"),
+      ]);
+      if (!version) return null;
+      return {
+        current: { id: buildNumber ?? version, friendlyName: `Roku OS ${version} (build ${build ?? "?"})` },
+        updateCandidates: null, // Roku updates itself; ECP exposes no update control
+      };
+    },
+    status: { updateStatus: "UNSUPPORTED" },
+  };
+};
+
+const getMetadata: methodGetMetadata = async () => {
+  const info = deviceInfo();
+  return {
+    knowledgeBaseURL: async () => {
+      const url = await info("support-url");
+      return url ? (url.startsWith("http") ? url : `https://${url}`) : null;
+    },
+    userManualURL: null,
+    dataAcquisition: null,
+  };
+};
+
+const getNetwork: methodGetNetwork = async () => {
+  const info = deviceInfo();
+  return {
+    interfaces: async () => {
+      const [type, wifiMac, ethMac, ssid, hasEthernet] = await Promise.all([
+        info("network-type"),
+        info("wifi-mac"),
+        info("ethernet-mac"),
+        info("network-name"),
+        info("supports-ethernet"),
+      ]);
+      const ipv4 = { canSet: false, addressType: null, effective: { address: getDevice().ipv4 } };
+      const ifaces: NetworkInterface[] = [
+        {
+          id: "wifi",
+          friendlyName: "Wi-Fi",
+          adapterType: "WIRELESS",
+          enabled: type === "wifi",
+          canEnable: false,
+          macAddress: wifiMac,
+          wifi: { ssid: type === "wifi" ? ssid : null },
+          ipv4: type === "wifi" ? ipv4 : null,
+        },
+      ];
+      if (hasEthernet === "true") {
+        ifaces.push({
+          id: "ethernet",
+          friendlyName: "Ethernet",
+          adapterType: "WIRED",
+          enabled: type === "ethernet",
+          canEnable: false,
+          macAddress: ethMac,
+          wifi: null,
+          ipv4: type === "ethernet" ? ipv4 : null,
+        });
+      }
+      return ifaces;
+    },
+  };
+};
+
+const getPower: methodGetPower = async () => {
+  const info = deviceInfo();
+  return {
+    state: async () => powerState(toPowerState(await info("power-mode"))),
+    canReboot: null, // ECP has no reboot command
+    powerSavingMode: null,
+    wakeOnLAN: null, // device-info only says it is supported, not whether it is on
+  };
+};
+
+const setPowerState: methodSetPowerState = async ({ args }) => {
+  await keypress(args.state === "ON" ? "PowerOn" : "PowerOff");
+  // ponytail: report the requested state; the TV's power-mode lags the keypress by a few seconds.
+  const current = args.state === "ON" ? "ON" : "STANDBY";
+  return powerState(current);
+};
+
+const getInputs: methodGetInputs = async () => ({
+  available: async () => (await apps("tvin")).map(toInput),
+  cecMode: null,
+  arcMode: null,
+});
+
+const setInputsActive: methodSetInputsActive = async ({ args }) => {
+  requireContext(args.contextId);
+  if (!args.inputId.startsWith("tvinput.")) throw new RpcError(`Not an input: "${args.inputId}"`, ERR_BAD_ARGS);
+  await launch(args.inputId);
+  return settle((ctx) => ctx.input?.id === args.inputId);
+};
+
+const getAppSources: methodGetAppSources = async () => ({
+  available: async () => (await apps("appl")).map(toAppSource),
+  canTerminate: true,
+});
+
+const setAppSourcesActive: methodSetAppSourcesActive = async ({ args }) => {
+  requireContext(args.contextId);
+  if (args.sourceId === "home") await keypress("Home");
+  else await launch(args.sourceId);
+  return settle((ctx) => ctx.source?.id === args.sourceId);
+};
+
+// Roku has no "close app" command; going Home ends the app.
+const dispatchAppSourcesTerminate: methodDispatchAppSourcesTerminate = async ({ args }) => {
+  requireContext(args.contextId);
+  await keypress("Home");
+  return settle((ctx) => ctx.source?.id === "home");
+};
+
+const getActiveContexts: methodGetActiveContexts = async () => ({
+  contexts: async () => [await activeContext()],
+});
+
+await serveRpc({
+  getAuthentication,
+  setAuthentication,
+  getSystem,
+  getFirmware,
+  getMetadata,
+  getNetwork,
+  getPower,
+  setPowerState,
+  getInputs,
+  setInputsActive,
+  getAppSources,
+  setAppSourcesActive,
+  dispatchAppSourcesTerminate,
+  getActiveContexts,
+});

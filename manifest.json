@@ -1,0 +1,29 @@
+{
+  "name": "TCL Roku TV",
+  "description": "Monitor and control TCL Roku TVs over the Roku External Control Protocol (ECP).",
+  "version": "0.1.0",
+  "category": "display",
+  "kind": "js",
+  "identification": {
+    "discovery": {
+      "$or": [
+        {
+          "ssdp": {
+            "services": [{ "st": "roku:ecp" }]
+          },
+          "upnp": {
+            "deviceType": "urn:roku-com:device:player:1-0",
+            "manufacturerURL": "support.tcl.com*",
+            "services": [{ "serviceType": "urn:roku-com:service:ecp:1" }]
+          }
+        },
+        {
+          "upnp": {
+            "deviceType": "urn:roku-com:device:player:1-0",
+            "manufacturerURL": "support.tcl.com*"
+          }
+        }
+      ]
+    }
+  }
+}

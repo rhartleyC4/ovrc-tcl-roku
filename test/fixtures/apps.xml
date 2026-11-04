@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<apps>
+	<app id="tvinput.hdmi1" type="tvin" version="1.0.0">Laptop</app>
+	<app id="tvinput.hdmi2" type="tvin" version="1.0.0">PlayStation 4</app>
+	<app id="tvinput.hdmi3" type="tvin" version="1.0.0">Nintendo Switch</app>
+	<app id="tvinput.cvbs" type="tvin" version="1.0.0">AV</app>
+	<app id="tvinput.dtv" type="tvin" version="1.0.0">Live TV</app>
+	<app id="12" type="appl" version="5.0.130079007">Netflix</app>
+	<app id="837" type="appl" version="2.23.115025187">YouTube</app>
+	<app id="13535" type="appl" version="9.17.15">Plex - Free Movies &amp; TV</app>
+	<app id="291097" type="appl" version="1.65.2026082100">Disney Plus</app>
+</apps>

@@ -1,0 +1,78 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<device-info>
+	<udn>00000000-0000-0000-0000-000000000001</udn>
+	<serial-number>X000A0000000</serial-number>
+	<device-id>DEV000000000</device-id>
+	<advertising-id>00000000-0000-0000-0000-000000000000</advertising-id>
+	<user-profile-type>adult</user-profile-type>
+	<vendor-name>TCL</vendor-name>
+	<model-name>32S301</model-name>
+	<model-number>8102X</model-number>
+	<model-region>US</model-region>
+	<is-tv>true</is-tv>
+	<is-stick>false</is-stick>
+	<screen-size>32</screen-size>
+	<panel-id>1</panel-id>
+	<mobile-has-live-tv>true</mobile-has-live-tv>
+	<ui-resolution>720p</ui-resolution>
+	<tuner-type>ATSC</tuner-type>
+	<supports-ethernet>false</supports-ethernet>
+	<wifi-mac>00:00:5e:00:53:01</wifi-mac>
+	<wifi-driver>realtek</wifi-driver>
+	<has-wifi-5G-support>true</has-wifi-5G-support>
+	<network-type>wifi</network-type>
+	<network-name>HomeWiFi</network-name>
+	<friendly-device-name>Living Room TV</friendly-device-name>
+	<friendly-model-name>TCL•Roku TV</friendly-model-name>
+	<default-device-name>TCL•Roku TV - X000A0000000</default-device-name>
+	<user-device-name>Living Room TV</user-device-name>
+	<user-device-location>Living room</user-device-location>
+	<build-number>48G.34E02303A</build-number>
+	<software-version>15.3.4</software-version>
+	<software-build>2303</software-build>
+	<lightning-base-build-number />
+	<ui-build-number>48G.34E02303A</ui-build-number>
+	<ui-software-version>15.3.4</ui-software-version>
+	<ui-software-build>2303</ui-software-build>
+	<secure-device>true</secure-device>
+	<ecp-setting-mode>enabled</ecp-setting-mode>
+	<language>en</language>
+	<country>US</country>
+	<locale>en_US</locale>
+	<closed-caption-mode>Off</closed-caption-mode>
+	<time-zone-auto>true</time-zone-auto>
+	<time-zone>US/Mountain</time-zone>
+	<time-zone-name>United States/Mountain</time-zone-name>
+	<time-zone-tz>America/Denver</time-zone-tz>
+	<time-zone-offset>-420</time-zone-offset>
+	<clock-format>12-hour</clock-format>
+	<uptime>172</uptime>
+	<power-mode>PowerOn</power-mode>
+	<supports-suspend>true</supports-suspend>
+	<supports-find-remote>false</supports-find-remote>
+	<supports-audio-guide>true</supports-audio-guide>
+	<supports-rva>true</supports-rva>
+	<has-hands-free-voice-remote>false</has-hands-free-voice-remote>
+	<developer-enabled>false</developer-enabled>
+	<keyed-developer-id />
+	<device-automation-bridge-enabled>false</device-automation-bridge-enabled>
+	<search-enabled>true</search-enabled>
+	<search-channels-enabled>true</search-channels-enabled>
+	<voice-search-enabled>true</voice-search-enabled>
+	<supports-private-listening>true</supports-private-listening>
+	<private-listening-blocked>false</private-listening-blocked>
+	<supports-private-listening-dtv>true</supports-private-listening-dtv>
+	<supports-warm-standby>true</supports-warm-standby>
+	<headphones-connected>false</headphones-connected>
+	<supports-audio-settings>false</supports-audio-settings>
+	<supports-ecs-textedit>true</supports-ecs-textedit>
+	<supports-ecs-microphone>true</supports-ecs-microphone>
+	<supports-wake-on-wlan>true</supports-wake-on-wlan>
+	<supports-airplay>true</supports-airplay>
+	<has-play-on-roku>false</has-play-on-roku>
+	<has-mobile-screensaver>false</has-mobile-screensaver>
+	<support-url>support.tcl.com/us</support-url>
+	<grandcentral-version>26.37.13</grandcentral-version>
+	<supports-trc>true</supports-trc>
+	<av-sync-calibration-enabled>3.0</av-sync-calibration-enabled>
+</device-info>

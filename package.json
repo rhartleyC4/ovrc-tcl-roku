@@ -1,0 +1,25 @@
+{
+  "name": "ovrc-tcl-roku",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "transpile": "ovrc-integration-esbuild src/index.ts --bundle --format=esm --target=es2023 --outfile=dist/integration.js --minify",
+    "build": "if [ \"$WATCH\" = \"true\" ]; then npm run build:watch; else npm run build:once; fi",
+    "build:once": "npm i && npm run transpile && cp manifest.json dist/manifest.json",
+    "build:watch": "npm run watch -- npm run build:once",
+    "watch": "watchexec --exts ts,js,json --ignore 'dist/*' -- ",
+    "typecheck": "tsc --noEmit",
+    "test": "npm run typecheck && npm run transpile && cp manifest.json dist/manifest.json && node --test test/*.test.mjs"
+  },
+  "dependencies": {
+    "@snap-one/ovrc-integration-display": "1.6.0"
+  },
+  "devDependencies": {
+    "@snap-one/ovrc-integration": "1.2.0",
+    "typescript": "6.0.2"
+  },
+  "license": "MIT",
+  "engines": {
+    "node": ">=22.12"
+  }
+}
